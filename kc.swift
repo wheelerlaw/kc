@@ -9,32 +9,38 @@ let EX_NOTFOUND: Int32 = 44   // matches `security` (errSecItemNotFound as exit 
 let EX_DUPLICATE: Int32 = 45  // matches `security` (errSecDuplicateItem as exit code)
 
 let usageText = """
-Usage: kc <command> [options]
+Usage:
+  kc set    -s <service> [-a <account>] [options] [-k <keychain>]
+  kc get    [-s <service>] [-a <account>] [-k <keychain>]
+  kc delete [-s <service>] [-a <account>] [-k <keychain>]
 
 Commands:
-  set     Store a secret (read from stdin, or prompted interactively)
-  get     Print a stored secret to stdout
-  delete  Remove a stored secret
+  set     Store a secret, read from stdin or prompted for interactively
+  get     Print the first matching secret to stdout
+  delete  Remove the first matching secret
 
-Options:
-  -s <service>   Service name (required unless -a given)
-  -a <account>   Account name (required unless -s given)
-  -l <label>     Item label (set only; defaults to service)
-  -j <comment>   Item comment (set only)
-  -D <kind>      Item kind (set only)
-  -U             Update the item if it already exists (set only;
-                 existing access list is kept)
-  -T <app_path>  Trust an additional application (set only; repeatable)
-  -A             Allow any application to read without warning (set only)
-  -k <keychain>  Target keychain file (default: user's default keychain)
+Item:
+  -s <service>   Service name (required for set)
+  -a <account>   Account name (set default: current user, i.e. $USER)
+  -u <username>  Alias for -a
+                 get/delete match on whichever of -s/-a you give (at least one)
 
-Other:
-  kc --version   Print version
-  kc -h|--help|help   Show this help
+Options for set:
+  -l <label>     Item label (default: service name)
+  -j <comment>   Item comment
+  -D <kind>      Item kind
+  -U             Update the item if it already exists (its access list is kept)
+  -T <app_path>  Also trust this application (repeatable)
+  -A             Allow any application to read without warning
+
+Common:
+  -k <keychain>  Keychain file to use (default: your default keychain)
+  -h, --help     Show this help
+  --version      Print version
 """
 
-func usageStdout() -> Never { FileHandle.standardOutput.write(Data(usageText.utf8)); exit(0) }
-func usageStderr() -> Never { FileHandle.standardError.write(Data(usageText.utf8)); exit(EX_USAGE) }
+func usageStdout() -> Never { FileHandle.standardOutput.write(Data((usageText + "\n").utf8)); exit(0) }
+func usageStderr() -> Never { FileHandle.standardError.write(Data((usageText + "\n").utf8)); exit(EX_USAGE) }
 
 func die(_ msg: String, _ code: Int32 = 1) -> Never {
     FileHandle.standardError.write(Data("\(prog): \(msg)\n".utf8))
@@ -183,18 +189,16 @@ func query(service: String?, account: String?, keychain: SecKeychain?) -> [Strin
 
 // MARK: - Commands
 
-func cmdSet(service: String?, account: String?, label: String?, comment: String?, kind: String?,
+func cmdSet(service: String, account: String, label: String?, comment: String?, kind: String?,
             update: Bool, trustedPaths: [String], anyApp: Bool, keychainPath: String?) {
     let secret = readSecret()
     let keychain = openKeychain(keychainPath)
-    let svc = service ?? ""
-    let acct = account ?? ""
-    let itemLabel = label ?? svc
+    let itemLabel = label ?? service
 
     var attrs: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: svc,
-        kSecAttrAccount as String: acct,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
         kSecValueData as String: secret,
         kSecAttrLabel as String: itemLabel,
         kSecAttrAccess as String: makeAccess(label: itemLabel, trustedPaths: trustedPaths, anyApp: anyApp),
@@ -210,7 +214,7 @@ func cmdSet(service: String?, account: String?, label: String?, comment: String?
         if let label = label { updateAttrs[kSecAttrLabel as String] = label }
         if let comment = comment { updateAttrs[kSecAttrComment as String] = comment }
         if let kind = kind { updateAttrs[kSecAttrDescription as String] = kind }
-        status = SecItemUpdate(query(service: svc, account: acct, keychain: keychain) as CFDictionary,
+        status = SecItemUpdate(query(service: service, account: account, keychain: keychain) as CFDictionary,
                                updateAttrs as CFDictionary)
     }
     guard status == errSecSuccess else { dieStatus(status) }
@@ -274,7 +278,7 @@ struct KC {
         while i < args.count {
             switch args[i] {
             case "-s": service = takeValue(&i)
-            case "-a": account = takeValue(&i)
+            case "-a", "-u": account = takeValue(&i)
             case "-l": label = takeValue(&i)
             case "-j": comment = takeValue(&i)
             case "-D": kind = takeValue(&i)
@@ -293,11 +297,19 @@ struct KC {
             if label != nil || comment != nil || kind != nil || update || anyApp || !trustedPaths.isEmpty { usageStderr() }
         }
 
-        if service == nil && account == nil { usageStderr() }
+        if cmd == "set" {
+            if service == nil {
+                FileHandle.standardError.write(Data("\(prog): set requires -s <service>\nRun '\(prog) --help' for usage.\n".utf8))
+                exit(EX_USAGE)
+            }
+        } else if service == nil && account == nil {
+            FileHandle.standardError.write(Data("\(prog): \(cmd) requires -s and/or -a\nRun '\(prog) --help' for usage.\n".utf8))
+            exit(EX_USAGE)
+        }
 
         switch cmd {
         case "set":
-            cmdSet(service: service, account: account, label: label, comment: comment, kind: kind,
+            cmdSet(service: service!, account: account ?? NSUserName(), label: label, comment: comment, kind: kind,
                    update: update, trustedPaths: trustedPaths, anyApp: anyApp, keychainPath: keychainPath)
         case "get":
             cmdGet(service: service, account: account, keychainPath: keychainPath)

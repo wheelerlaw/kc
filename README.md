@@ -38,6 +38,12 @@ pbpaste | kc set -s my-service -a my-account
 # Interactive prompt (unlimited length, echo disabled)
 kc set -s my-service -a my-account
 
+# -u is an alias for -a
+kc set -s my-service -u my-account
+
+# -a is optional on set: the account defaults to $USER
+kc set -s my-service
+
 # Read it back
 kc get -s my-service -a my-account
 
@@ -49,6 +55,16 @@ kc delete -s my-service -a my-account
 
 # Target a specific keychain file
 kc set -s svc -a acct -k /tmp/scratch.keychain-db
+```
+
+`set` requires `-s <service>`; `get`/`delete` need at least one of `-s`/`-a`
+and match on whichever you give. A handy pattern is one service holding many
+named secrets:
+
+```
+kc set -s env -a NPM_TOKEN     # paste the token
+kc get -s env -a NPM_TOKEN     # -> token
+kc delete -s env               # removes one matching item at a time
 ```
 
 Options for `set`: `-l <label>` (defaults to service), `-j <comment>`,

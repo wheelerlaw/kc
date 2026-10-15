@@ -133,6 +133,25 @@ expect_exit 64 $? "t7: no args"
 "$KC" 2>&1 | grep -q 'Usage' && ok "t7: usage text" || fail "t7: usage text"
 V=$("$KC" --version)
 [ -n "$V" ] && ok "t7: --version ($V)" || fail "t7: --version"
+[ "$("$KC" --help | tail -c1 | xxd -p | tr -d ' \n')" = "0a" ] && ok "t7: help ends with newline" || fail "t7: help missing trailing newline"
+
+# --- Test 8: -u alias, -s requirement, $USER account default ---
+KC8=$(mkkc 8); KEYCHAINS+=("$KC8")
+printf 'v' | "$KC" set -s t8 -u name -k "$KC8"
+expect_exit 0 $? "t8: set -u"
+security find-generic-password -s t8 "$KC8" 2>/dev/null | grep -q '"acct"<blob>="name"' \
+    && ok "t8: -u stored account name" || fail "t8: -u account"
+[ "$("$KC" get -u name -k "$KC8")" = "v" ] && ok "t8: get -u" || fail "t8: get -u"
+printf 'v' | "$KC" set -s t8def -k "$KC8"
+expect_exit 0 $? "t8: set with no -a"
+ME=$(id -un)
+security find-generic-password -s t8def "$KC8" 2>/dev/null | grep -q "\"acct\"<blob>=\"$ME\"" \
+    && ok "t8: account defaults to $USER ($ME)" || fail "t8: account default"
+printf 'v' | "$KC" set -a x -k "$KC8" 2>/tmp/t8err
+expect_exit 64 $? "t8: set without -s"
+grep -q 'set requires -s' /tmp/t8err && ok "t8: stderr says set requires -s" || fail "t8: missing -s message"
+"$KC" get -k "$KC8" 2>/dev/null
+expect_exit 64 $? "t8: get with no -s/-a"
 
 echo
 if [ "$FAIL" -eq 0 ]; then echo "ALL TESTS PASSED"; else echo "SOME TESTS FAILED"; exit 1; fi
