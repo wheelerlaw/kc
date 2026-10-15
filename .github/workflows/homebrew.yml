@@ -1,0 +1,28 @@
+name: Bump Homebrew formula
+
+on:
+  push:
+    tags: 'v*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  homebrew:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
+        id: octo-sts
+        with:
+          scope: wheelerlaw/homebrew-tap
+          identity: bump-kc
+      - uses: mislav/bump-homebrew-formula-action@f865c8b0dbebd6e263cc06782a0e974c61cf12d2 # v4.2
+        with:
+          formula-name: kc
+          homebrew-tap: wheelerlaw/homebrew-tap
+          base-branch: main
+          push-to: wheelerlaw/homebrew-tap
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          COMMITTER_TOKEN: ${{ steps.octo-sts.outputs.token }}
